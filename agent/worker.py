@@ -1,6 +1,6 @@
 """Private webhook receiver for the existing bot; no Telegram getUpdates polling."""
-from concurrent.futures import ThreadPoolExecutor
 import hashlib
+import ssl
 import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -65,8 +65,12 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     Handler.app, Handler.secret = build_app()
-    # Never publish this HTTP listener directly; use a TLS reverse proxy with pinned domain.
-    ThreadingHTTPServer(('127.0.0.1', 8765), Handler).serve_forever()
+    server = ThreadingHTTPServer(('0.0.0.0', 8765), Handler)
+    tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    tls.minimum_version = ssl.TLSVersion.TLSv1_2
+    tls.load_cert_chain(os.environ['VILO_AGENT_TLS_CERT'], os.environ['VILO_AGENT_TLS_KEY'])
+    server.socket = tls.wrap_socket(server.socket, server_side=True)
+    server.serve_forever()
 
 
 if __name__ == '__main__':
