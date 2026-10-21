@@ -1,12 +1,12 @@
 # Vilo agent worker
 
-This optional worker uses the **existing ViloShop bot token**. Telegram keeps the original tgcloud webhook; no `getUpdates` or `setWebhook` calls are made. The shop forwards only admin updates from topic `-1003925413574 / 2464` plus explicit admin-private setup replies. The worker needs an always-on host with public HTTPS for the forwarding endpoint. It **cannot run on the serverless isolate** because it needs an SSH client and durable encrypted storage.
+This optional worker uses the **existing ViloShop bot token**. Telegram keeps the original tgcloud webhook; no `getUpdates` or `setWebhook` calls are made. The shop queues only admin updates from topic `-1003925413574 / 2464` plus explicit admin-private setup replies. The worker polls this queue over outbound HTTPS. It **cannot run on the serverless isolate** because it needs an SSH client and durable encrypted storage.
 
 ## Setup
 
-- Python 3.10+ on a dedicated host, reachable at an HTTPS URL with a valid certificate (not the VPN node). Install `agent/requirements.txt` in a virtual environment.
+- Python 3.10+ on an always-on host with outbound HTTPS access to tgcloud and Telegram. Install `agent/requirements.txt` in a virtual environment.
 - Set `VILO_AGENT_BOT_TOKEN` to the existing shop bot's token **only on this worker**, `VILO_AGENT_ADMIN_IDS` to the numeric admin IDs, `VILO_AGENT_DATA` to a private directory, `VILO_AGENT_FORWARD_SECRET` to 48+ random characters. Never add credentials to git or Telegram groups.
-- Start `python3 -I agent/worker.py` with `VILO_AGENT_TLS_CERT` and `VILO_AGENT_TLS_KEY` pointing to a valid certificate/key for the worker hostname. The listener serves HTTPS on port 8765 directly; restrict inbound access at the host/provider firewall where possible. Set tgcloud `settings.agent_forward_url` to the exact HTTPS URL and `settings.agent_forward_secret` to the same secret. Use a secure admin-controlled configuration path; no public configuration endpoint is included.
+- Start `python3 agent/poller.py`; no inbound agent HTTP port is needed. Configure the same secret in tgcloud via the admin-only `configureAgentForward` endpoint. The queue uses outbound HTTPS on port 443.
 - The bot must be allowed to read messages in topic 2464. The agent accepts commands only from configured admin IDs; setup replies go only to private chat.
 - Create encrypted local backups of the agent data directory **and its master key separately**. Losing the key makes encrypted SSH credentials and model keys unrecoverable.
 
