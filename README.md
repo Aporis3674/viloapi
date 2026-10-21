@@ -11,10 +11,10 @@
 
 ## نصب
 
-دامنه و ایمیل نمونه را جایگزین کنید. دستور فایل را در پوشه موقت مستقل دانلود می‌کند و فقط پس از دانلود موفق اجرا می‌کند:
+یک دستور اجرا کنید؛ نصب‌کننده دامنه، ایمیل و نام دلخواه سرور را می‌پرسد. نصب وابستگی‌ها، تولید کلیدها، HTTPS و سرویس‌ها خودکار است. تنظیم DNS و فایروال پنل میزبان نیازمند دسترسی به حساب همان سرویس است و این نصب‌کننده آن دسترسی را ندارد. دستور فایل را در پوشه موقت مستقل دانلود می‌کند و فقط پس از دانلود موفق اجرا می‌کند:
 
 ```bash
-work=$(mktemp -d) && curl -fsSL --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/Aporis3674/viloapi/main/scripts/install_node.sh -o "$work/install_node.sh" && sudo bash "$work/install_node.sh" --host vpn.example.com --email admin@example.com --country Germany --name Germany-2
+work=$(mktemp -d) && curl -fsSL --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/Aporis3674/viloapi/main/scripts/install_node.sh -o "$work/install_node.sh" && bash "$work/install_node.sh"
 ```
 
 کد دانلودشده با دسترسی root اجرا می‌شود؛ پیش از اجرای آن کد را بازبینی کنید. برای نصب تکرارپذیر، `main` در URL را با SHA کامیت مورد نظر جایگزین کنید و همان SHA را با `sudo env VILO_REF=<SHA> bash ...` به نصب‌کننده بدهید.

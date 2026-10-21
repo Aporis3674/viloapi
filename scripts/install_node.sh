@@ -13,7 +13,21 @@ while (($#)); do
   esac
   shift 2
 done
-[[ $EUID == 0 ]] || { printf 'Run as root.\n' >&2; exit 1; }
+if [[ $EUID != 0 ]]; then
+  command -v sudo >/dev/null || { printf 'با حساب root وارد سرور شوید.\n' >&2; exit 1; }
+  exec sudo env VILO_REF="$REF" bash "$0" --host "$HOST" --email "$EMAIL" --ip "$IP" --country "$COUNTRY" --name "$NAME" --sni "$SNI"
+fi
+if [[ ! -f /etc/vilo-node/installed && ( -z "$HOST" || -z "$EMAIL" ) ]]; then
+  [[ -r /dev/tty ]] || { printf 'Interactive terminal required, or supply --host and --email.\n' >&2; exit 1; }
+  printf '\nنصب خودکار Vilo API\nدامنه باید مستقیم به IP این سرور اشاره کند؛ پروکسی CDN خاموش باشد.\n'
+  if [[ -z "$HOST" ]]; then read -r -p 'دامنه سرور (مثال vpn.example.com): ' HOST < /dev/tty; fi
+  if [[ -z "$EMAIL" ]]; then read -r -p 'ایمیل برای گواهی HTTPS: ' EMAIL < /dev/tty; fi
+  read -r -p 'نام دلخواه سرور [Vilo]: ' LABEL < /dev/tty
+  NAME="${LABEL:-Vilo}"
+  printf 'این نصب روی VPS خالی انجام می‌شود؛ پورت‌های 80، 443 و 8443 باید در پنل میزبان باز باشند.\n'
+  read -r -p 'با نصب و شرایط Let’s Encrypt موافقید؟ [y/N]: ' CONFIRM < /dev/tty
+  [[ "$CONFIRM" == y || "$CONFIRM" == Y ]] || exit 1
+fi
 [[ -r /etc/os-release ]] || exit 1
 . /etc/os-release
 [[ "$ID" == ubuntu || "$ID" == debian ]] || { printf 'Ubuntu/Debian required.\n' >&2; exit 1; }
