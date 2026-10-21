@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.env
+*.pem
+*.key
+node.json
+*.sqlite*
