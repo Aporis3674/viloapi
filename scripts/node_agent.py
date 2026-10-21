@@ -223,6 +223,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(content)
 
     def do_POST(self):
+        if self.client_address[0] not in ('127.0.0.1', '::1'):
+            self.send(403, {'ok': False})
+            return
         expected = 'Bearer ' + self.node.cfg['syncSecret']
         if not hmac.compare_digest(self.headers.get('Authorization', '').encode(), expected.encode()):
             self.send(403, {'ok': False})

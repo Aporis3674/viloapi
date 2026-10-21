@@ -1,61 +1,50 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 umask 077
-# Usage: sudo bash install_node.sh --host vpn.example.com --email admin@example.com [--ip PUBLIC_IP] [--country Germany]
-# ponytail: dedicated Ubuntu/Debian VPS only; adopt existing installations through an explicit migration, never overwrite them.
-HOST='' EMAIL='' IP='' COUNTRY='Unknown' NAME='Vilo' SNI='dl.google.com' PORT=8443
+# Usage: bash install_node.sh [--ip PUBLIC_IP] [--country Germany] [--name Germany-2]
+# ponytail: dedicated empty VPS only; never overwrite an existing Xray installation.
+IP='' COUNTRY='Unknown' NAME='Vilo' SNI='dl.google.com'
 REF="${VILO_REF:-main}"
 while (($#)); do
   case "$1" in
-    --host) HOST="${2:?}";; --email) EMAIL="${2:?}";; --ip) IP="${2:?}";;
-    --country) COUNTRY="${2:?}";; --name) NAME="${2:?}";; --sni) SNI="${2:?}";;
+    --ip) IP="${2:?}";; --country) COUNTRY="${2:?}";;
+    --name) NAME="${2:?}";; --sni) SNI="${2:?}";;
     *) printf 'Unknown argument: %s\n' "$1" >&2; exit 1;;
   esac
   shift 2
 done
 if [[ $EUID != 0 ]]; then
-  command -v sudo >/dev/null || { printf 'با حساب root وارد سرور شوید.\n' >&2; exit 1; }
-  exec sudo env VILO_REF="$REF" bash "$0" --host "$HOST" --email "$EMAIL" --ip "$IP" --country "$COUNTRY" --name "$NAME" --sni "$SNI"
-fi
-if [[ ! -f /etc/vilo-node/installed && ( -z "$HOST" || -z "$EMAIL" ) ]]; then
-  [[ -r /dev/tty ]] || { printf 'Interactive terminal required, or supply --host and --email.\n' >&2; exit 1; }
-  printf '\nنصب خودکار Vilo API\nدامنه باید مستقیم به IP این سرور اشاره کند؛ پروکسی CDN خاموش باشد.\n'
-  if [[ -z "$HOST" ]]; then read -r -p 'دامنه سرور (مثال vpn.example.com): ' HOST < /dev/tty; fi
-  if [[ -z "$EMAIL" ]]; then read -r -p 'ایمیل برای گواهی HTTPS: ' EMAIL < /dev/tty; fi
-  read -r -p 'نام دلخواه سرور [Vilo]: ' LABEL < /dev/tty
-  NAME="${LABEL:-Vilo}"
-  printf 'این نصب روی VPS خالی انجام می‌شود؛ پورت‌های 80، 443 و 8443 باید در پنل میزبان باز باشند.\n'
-  read -r -p 'با نصب و شرایط Let’s Encrypt موافقید؟ [y/N]: ' CONFIRM < /dev/tty
-  [[ "$CONFIRM" == y || "$CONFIRM" == Y ]] || exit 1
+  command -v sudo >/dev/null || { printf 'Run as root or install sudo.\n' >&2; exit 1; }
+  exec sudo env VILO_REF="$REF" bash "$0" --ip "$IP" --country "$COUNTRY" --name "$NAME" --sni "$SNI"
 fi
 [[ -r /etc/os-release ]] || exit 1
 . /etc/os-release
 [[ "$ID" == ubuntu || "$ID" == debian ]] || { printf 'Ubuntu/Debian required.\n' >&2; exit 1; }
-[[ "$HOST" =~ ^([a-z0-9][a-z0-9-]*\.)+[a-z]{2,63}$ && "$EMAIL" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || { printf 'Provide --host and --email. DNS must point to this VPS.\n' >&2; exit 1; }
 [[ "$SNI" =~ ^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,63}$ && "$REF" =~ ^[a-zA-Z0-9._-]+$ ]] || exit 1
+printf 'Vilo node installer: no domain required. Public HTTP serves subscriptions only; management stays on localhost.\n'
 if [[ -f /etc/vilo-node/node.json && -f /etc/vilo-node/installed ]]; then
   systemctl is-active --quiet vilo-xray vilo-node nginx || { printf 'Installation exists but services are unhealthy; inspect journalctl before repair.\n' >&2; exit 1; }
   printf 'Already installed. Existing configuration and keys preserved.\n'
-  python3 -I -c 'import json,base64; d=json.load(open("/etc/vilo-node/node.json")); print("vilo1."+base64.b64encode(json.dumps(d,ensure_ascii=True).encode()).decode())'
+  python3 -I -c 'import json; d=json.load(open("/etc/vilo-node/node.json")); print("Node IP:",d["ip"],"| Subscription URL: http://"+d["ip"]+"/sub")'
   exit 0
 fi
 for target in /etc/vilo-node /usr/local/bin/xray /etc/xray /usr/local/etc/xray /etc/nginx/sites-enabled/default /etc/systemd/system/vilo-node.service; do
   [[ ! -e "$target" ]] || { printf 'Existing installation detected: %s. Refusing overwrite.\n' "$target" >&2; exit 1; }
 done
 command -v systemctl >/dev/null || { printf 'systemd required.\n' >&2; exit 1; }
-for p in 80 443 8443 10085 10086 10087; do
+for p in 80 443 10085 10086 10087; do
   if command -v ss >/dev/null && [[ -n "$(ss -H -ltn "sport = :$p")" ]]; then
     printf 'Port %s already in use.\n' "$p" >&2; exit 1
   fi
 done
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends ca-certificates curl python3 unzip nginx certbot openssl iproute2
+apt-get install -y --no-install-recommends ca-certificates curl python3 unzip nginx iproute2
 # nginx's package default is the only site removed; pre-existing installations were refused above.
 rm -f /etc/nginx/sites-enabled/default
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-export VILO_HOST="$HOST" VILO_EMAIL="$EMAIL" VILO_IP="$IP" VILO_COUNTRY="$COUNTRY" VILO_NAME="$NAME" VILO_SNI="$SNI"
+export VILO_IP="$IP" VILO_COUNTRY="$COUNTRY" VILO_NAME="$NAME" VILO_SNI="$SNI"
 python3 -I - "$WORK" <<'PY'
 import hashlib, ipaddress, json, os, pathlib, platform, re, socket, sys, urllib.request, zipfile
 work = pathlib.Path(sys.argv[1])
@@ -66,9 +55,6 @@ def get(url):
 ip = os.environ['VILO_IP'] or get('https://api.ipify.org').decode().strip()
 address = ipaddress.ip_address(ip)
 if address.version != 4 or not address.is_global: raise SystemExit('Public IPv4 required')
-host = os.environ['VILO_HOST']
-resolved = {item[4][0] for item in socket.getaddrinfo(host, None, socket.AF_INET)}
-if resolved != {ip}: raise SystemExit('DNS A record must point directly to this VPS (no CDN proxy)')
 if len(os.environ['VILO_NAME']) > 64 or len(os.environ['VILO_COUNTRY']) > 64: raise SystemExit('Name/country too long')
 arch = {'x86_64': '64', 'aarch64': 'arm64-v8a'}.get(platform.machine())
 if not arch: raise SystemExit('Supported architectures: amd64, arm64')
@@ -108,7 +94,7 @@ fi
 # Compile, never execute downloaded Python during validation.
 python3 -I -c 'import ast,sys; ast.parse(open(sys.argv[1],encoding="utf-8").read())' "$WORK/node_agent.py"
 install -d -m 700 /etc/vilo-node
-install -d -m 755 /opt/vilo-node /usr/local/share/xray /var/www/vilo-acme/.well-known/acme-challenge
+install -d -m 755 /opt/vilo-node /usr/local/share/xray
 install -m 755 "$WORK/xray" /usr/local/bin/xray
 install -m 644 "$WORK/geoip.dat" "$WORK/geosite.dat" /usr/local/share/xray/
 install -m 644 "$WORK/node_agent.py" /opt/vilo-node/node_agent.py
@@ -122,8 +108,8 @@ private = re.search(r'(?:PrivateKey|Private key):\s*(\S+)', keys)
 public = re.search(r'(?:Password|PublicKey|Public key):\s*(\S+)', keys)
 if not private or not public: raise SystemExit('Unrecognized x25519 output; no guessed key fields')
 sid = secrets.token_hex(8)
-cfg = {'version': 1, 'name': os.environ['VILO_NAME'], 'host': os.environ['VILO_HOST'], 'ip': os.environ['VILO_IP'],
-       'port': 8443, 'country': os.environ['VILO_COUNTRY'], 'syncSecret': secrets.token_hex(32),
+cfg = {'version': 2, 'name': os.environ['VILO_NAME'], 'ip': os.environ['VILO_IP'],
+       'country': os.environ['VILO_COUNTRY'], 'syncSecret': secrets.token_hex(32),
        'connection': {'pbk': public[1], 'sid': sid, 'sni': os.environ['VILO_SNI'], 'realityPort': 443, 'wsPort': 80, 'wsPath': '/vilo-ws'}}
 config = {'log': {'loglevel': 'warning'}, 'stats': {},
  'api': {'tag': 'api', 'services': ['StatsService']},
@@ -144,49 +130,28 @@ for name, value in [('node.json', cfg), ('xray.json', config)]:
     path.chmod(0o600)
 PY
 /usr/local/bin/xray run -test -config /etc/vilo-node/xray.json
-# First start HTTP for ACME; Reality retains 443. HTTPS management uses 8443.
-cat > /etc/nginx/sites-available/vilo-node <<EOF
+# Only subscription delivery uses public HTTP. Authentication and management never do.
+cat > /etc/nginx/sites-available/vilo-node <<'EOF'
 server {
-    listen 80;
-    server_name $HOST;
+    listen 80 default_server;
+    server_name _;
     access_log off;
     error_log /var/log/nginx/vilo-error.log crit;
-    location /.well-known/acme-challenge/ { root /var/www/vilo-acme; }
     location = /vilo-ws {
         proxy_pass http://127.0.0.1:10087;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_read_timeout 3600s;
+    }
+    location = /sub {
+        proxy_pass http://127.0.0.1:10086;
+        proxy_set_header Authorization "";
     }
     location / { return 404; }
 }
 EOF
 ln -s /etc/nginx/sites-available/vilo-node /etc/nginx/sites-enabled/vilo-node
-nginx -t
-systemctl restart nginx
-certbot certonly --webroot -w /var/www/vilo-acme -d "$HOST" --email "$EMAIL" --agree-tos --non-interactive
-cat >> /etc/nginx/sites-available/vilo-node <<EOF
-server {
-    listen 8443 ssl;
-    server_name $HOST;
-    ssl_certificate /etc/letsencrypt/live/$HOST/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$HOST/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    access_log off;
-    error_log /var/log/nginx/vilo-error.log crit;
-    client_max_body_size 64k;
-    client_body_timeout 10s;
-    location / {
-        proxy_pass http://127.0.0.1:10086;
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 60s;
-    }
-}
-EOF
-install -d /etc/letsencrypt/renewal-hooks/deploy
-printf '#!/bin/sh\nnginx -t && systemctl reload nginx\n' > /etc/letsencrypt/renewal-hooks/deploy/vilo-nginx
-chmod 700 /etc/letsencrypt/renewal-hooks/deploy/vilo-nginx
 cat > /etc/systemd/system/vilo-xray.service <<'EOF'
 [Unit]
 Description=Vilo Xray
@@ -230,6 +195,6 @@ nginx -t
 systemctl reload nginx
 systemctl is-active --quiet vilo-xray vilo-node nginx
 touch /etc/vilo-node/installed
-printf 'Installed Xray %s. Allow inbound TCP 80, 443, 8443 in your provider firewall. Stats/API internals remain loopback-only.\n' "$(<"$WORK/version")"
-printf 'Paste this secret token into the bot private admin chat; do not publish it:\n'
-python3 -I -c 'import json,base64; d=json.load(open("/etc/vilo-node/node.json")); print("vilo1."+base64.b64encode(json.dumps(d,ensure_ascii=True).encode()).decode())'
+printf 'Installed Xray %s. Allow inbound TCP 80 and 443 in your provider firewall. Management API listens on 127.0.0.1:10086 only.\n' "$(<"$WORK/version")"
+python3 -I -c 'import json; d=json.load(open("/etc/vilo-node/node.json")); print("Node IP:",d["ip"],"| Subscription URL: http://"+d["ip"]+"/sub")'
+printf 'Give your agent the public IP, SSH port, username and SSH private key through a secure channel. Never paste a private key in a public chat.\n'
