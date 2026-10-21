@@ -1,28 +1,32 @@
-"""Pull agent updates over standard HTTPS from tgcloud; preserve shop webhook."""
+"""Pull queued agent updates using existing tgcloud CLI authorization."""
 import json
 import os
 from pathlib import Path
+import subprocess
 import time
-import urllib.error
-import urllib.request
 
 from bot import App, Telegram
 from core import Store
 
-BASE = 'https://app8891620674.tgcloud.ai/api/'
+CLI = '/root/viloshop_bot/node_modules/@tgcloud/cli/src/cli.js'
+ROOT = '/root/viloshop_bot'
 
 
 def cloud_call(name, data):
-    req = urllib.request.Request(BASE + name, json.dumps(data).encode(),
-          headers={'Content-Type': 'application/json'}, method='POST')
-    with urllib.request.urlopen(req, timeout=25) as response:
-        body = json.loads(response.read(150000))
-    if body.get('status') == 403 or body.get('body', {}).get('ok') is False:
+    args = ['node', CLI, 'run', 'endpoints/' + name, json.dumps(data)]
+    result = subprocess.run(args, cwd=ROOT, capture_output=True, text=True, timeout=35, check=False)
+    if result.returncode:
+        raise RuntimeError('Cloud queue command failed')
+    # CLI output is JS object notation, not JSON; read only the one-line result object.
+    from json5 import loads
+    import re
+    found = re.search(r'^<\s*(\{.*\})\s+\d+ms\s*$', result.stdout, re.MULTILINE)
+    if not found:
+        raise RuntimeError('Unexpected cloud queue response')
+    body = loads(found.group(1))
+    if not isinstance(body, dict) or body.get('ok') is not True:
         raise PermissionError('Cloud queue unauthorized')
-    result = body.get('result', body)
-    if isinstance(result, dict) and result.get('ok') is True:
-        return result
-    raise RuntimeError('Unexpected cloud queue response')
+    return body
 
 
 def main():
@@ -38,7 +42,7 @@ def main():
                 app.handle(item['update'])
                 cloud_call('ackAgentQueue', {'secret': secret, 'id': item['id']})
             time.sleep(3)
-        except (urllib.error.URLError, TimeoutError, RuntimeError, PermissionError, KeyError, ValueError):
+        except (subprocess.TimeoutExpired, RuntimeError, PermissionError, KeyError, ValueError):
             time.sleep(10)
 
 
