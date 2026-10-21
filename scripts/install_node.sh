@@ -85,19 +85,22 @@ PY
 IP="$(<"$WORK/ip")"
 export VILO_IP="$IP"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -f "$SCRIPT_DIR/node_agent.py" ]]; then
-  install -m 600 "$SCRIPT_DIR/node_agent.py" "$WORK/node_agent.py"
-else
-  curl --fail --show-error --silent --location --proto '=https' --proto-redir '=https' \
-    "https://raw.githubusercontent.com/Aporis3674/viloapi/$REF/scripts/node_agent.py" -o "$WORK/node_agent.py"
-fi
-# Compile, never execute downloaded Python during validation.
-python3 -I -c 'import ast,sys; ast.parse(open(sys.argv[1],encoding="utf-8").read())' "$WORK/node_agent.py"
+for script in node_agent.py agent_bridge.py; do
+  if [[ -f "$SCRIPT_DIR/$script" ]]; then
+    install -m 600 "$SCRIPT_DIR/$script" "$WORK/$script"
+  else
+    curl --fail --show-error --silent --location --proto '=https' --proto-redir '=https' \
+      "https://raw.githubusercontent.com/Aporis3674/viloapi/$REF/scripts/$script" -o "$WORK/$script"
+  fi
+  # Compile, never execute downloaded Python during validation.
+  python3 -I -c 'import ast,sys; ast.parse(open(sys.argv[1],encoding="utf-8").read())' "$WORK/$script"
+done
 install -d -m 700 /etc/vilo-node
 install -d -m 755 /opt/vilo-node /usr/local/share/xray
 install -m 755 "$WORK/xray" /usr/local/bin/xray
 install -m 644 "$WORK/geoip.dat" "$WORK/geosite.dat" /usr/local/share/xray/
 install -m 644 "$WORK/node_agent.py" /opt/vilo-node/node_agent.py
+install -m 600 "$WORK/agent_bridge.py" /etc/vilo-node/agent_bridge.py
 /usr/local/bin/xray x25519 > "$WORK/keys"
 export VILO_KEYS="$WORK/keys"
 python3 -I - <<'PY'

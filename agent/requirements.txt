@@ -1,0 +1,2 @@
+cryptography>=43,<47
+paramiko>=3.4,<5
