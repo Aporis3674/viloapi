@@ -38,11 +38,11 @@ class Telegram:
         self.base = f'https://api.telegram.org/bot{token}/'
 
     def call(self, method, data):
-        if method not in ('sendMessage', 'answerCallbackQuery', 'deleteMessage', 'getFile'):
+        if method not in ('sendMessage', 'answerCallbackQuery', 'deleteMessage', 'getFile', 'getMe', 'getUpdates'):
             raise ValueError('Telegram method not allowed')
         req = urllib.request.Request(self.base + method, json.dumps(data).encode(),
                                      headers={'Content-Type': 'application/json'}, method='POST')
-        with urllib.request.urlopen(req, timeout=65) as response:
+        with urllib.request.urlopen(req, timeout=70) as response:
             result = json.load(response)
         if not result.get('ok'):
             raise RuntimeError('Telegram API failed')
